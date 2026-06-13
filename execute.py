@@ -2,13 +2,26 @@
 execute.py — T-Shirt Design Replacer (Batch Mode + Auto-Upscale)
 ==================================================================
 USAGE:
-  python execute.py              # Upscale → generate mockups (full pipeline)
+  python execute.py              # Upscale → mockups → Printify upload (full pipeline)
   python execute.py --reset      # Clear saved corners and re-pick for all
   python execute.py --setup      # Only run corner setup (no processing)
   python execute.py --upscale-only   # Run upscaling step only (no mockups)
   python execute.py --skip-upscale   # Skip upscaling; use Final Designs/ as-is
   python execute.py --reupscale  # Force re-upscale (overwrite Final Designs/)
+  python execute.py --no-publish # Skip the Printify upload step (mockups only)
+  python execute.py --dry-run    # Printify step: preview only, create nothing
+  python execute.py --update-listings  # Regenerate AI title/description/tags for
+                                 #   every already-published product and republish
+  python execute.py --reconcile  # Forget ledger entries deleted on Printify (re-create them)
+  python execute.py --clear-ledger # Wipe the whole ledger (re-create ALL designs next run)
+  python execute.py --forget "name.png" [more...]  # Forget specific design(s) by file name
   python execute.py --help       # Show this help
+
+PRINTIFY SETUP (one-time, for Step 3):
+  1. pip install -r requirements.txt
+  2. Copy .env.example -> .env and paste your PRINTIFY_API_TOKEN
+     (Printify Dashboard -> My Profile -> Connections -> Generate).
+  If no token is set, Step 3 is skipped automatically (mockups still run).
 
 FOLDER STRUCTURE:
   thumbnails/      → Put your t-shirt thumbnail images here (.png/.jpg)
@@ -22,6 +35,8 @@ PIPELINE:
   1. Upscale every new design in designs/ → 4x → Final Designs/
      (uses 'realesr-general-x4v3' model — same as Upscayl Lite)
   2. For every thumbnail × every design in Final Designs/, render a mockup.
+  3. Upload each Final Designs/ image to Printify, create & publish the product.
+     (skips designs already in published.json; needs PRINTIFY_API_TOKEN)
 
 UPSCALER SETUP (one-time):
   Download Real-ESRGAN-ncnn-vulkan release for your OS:
@@ -42,8 +57,23 @@ from pathlib import Path
 import json
 import sys
 
+# Ensure UTF-8 output so emoji / box-drawing chars don't crash on Windows
+# (cp1252) consoles or when stdout is piped/redirected.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 from services.upscale_service import upscale as upscale_designs, find_binary
 from services.mockup_service import pick_corners_interactive, generate_mockups
+from services.printify_service import (
+    run_printify_upload,
+    reconcile_ledger,
+    clear_ledger,
+    forget_designs,
+    update_listings,
+)
 
 # ─── Folder Configuration ──────────────────────────────────────────────────────
 THUMBNAILS_DIR    = Path("thumbnails")
@@ -95,6 +125,8 @@ def run(
     skip_upscale: bool = False,
     force_reupscale: bool = False,
     upscale_only: bool = False,
+    no_publish: bool = False,
+    dry_run: bool = False,
 ):
     ensure_dirs()
 
@@ -208,6 +240,13 @@ def run(
     else:
         print(f"\n  💡 TIP: Use --setup to only run the corner picker.\n")
 
+    # ── Step 3: Printify upload ────────────────────────────────────────────────
+    if no_publish:
+        print(f"  ⏭️   Printify step skipped (--no-publish)\n")
+        return
+
+    run_printify_upload(designs, dry_run=dry_run)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Entry point
@@ -228,14 +267,43 @@ if __name__ == "__main__":
         if len(args) == 1:
             sys.exit(0)
 
+    # ── Ledger maintenance (published.json) ───────────────────────────────────
+    if "--update-listings" in args:
+        # Refresh title/description/tags (Gemini) on already-published products.
+        update_listings(FINAL_DESIGNS_DIR)
+        sys.exit(0)
+
+    if "--reconcile" in args:
+        # Drop records of products you've deleted on Printify so they re-create.
+        reconcile_ledger()
+        sys.exit(0)
+
+    if "--clear-ledger" in args:
+        clear_ledger()
+        sys.exit(0)
+
+    if "--forget" in args:
+        # Usage: python execute.py --forget "break.png" "retrying_my_prompt.png"
+        names = [a for a in args[args.index("--forget") + 1:] if not a.startswith("--")]
+        if not names:
+            print("⚠️  --forget needs at least one design file name, e.g.:")
+            print('    python execute.py --forget "break.png"')
+        else:
+            forget_designs(names)
+        sys.exit(0)
+
     setup_only      = "--setup" in args
     skip_upscale    = "--skip-upscale" in args
     force_reupscale = "--reupscale" in args
     upscale_only    = "--upscale-only" in args
+    no_publish      = "--no-publish" in args
+    dry_run         = "--dry-run" in args
     run(
         setup_only=setup_only,
         skip_upscale=skip_upscale,
         force_reupscale=force_reupscale,
         upscale_only=upscale_only,
+        no_publish=no_publish,
+        dry_run=dry_run,
     )
 

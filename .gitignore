@@ -1,0 +1,10 @@
+# Secrets & local state
+.env
+published.json
+printify_cache.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

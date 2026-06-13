@@ -6,6 +6,8 @@ Handles:
   • Perspective-warping a design onto the shirt
   • Auto blend-mode selection (screen for dark shirts, multiply for light)
   • Aspect-ratio-preserving transparent padding
+  • Smart size detection: measures how much of the print area the visible
+    artwork covers and auto-crops empty borders when it would render small
   • Batch processing of all thumbnail × design combinations
 """
 
@@ -172,6 +174,97 @@ def pick_corners_interactive(shirt_path: Path) -> list | None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Smart design sizing
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Below this print-area coverage the design is considered "too small" and gets
+# auto-enlarged by cropping its empty border. Above it, it's left untouched.
+MIN_PRINT_FILL = 0.85
+# Breathing room kept around the artwork when cropping (fraction of bbox size).
+CROP_MARGIN = 0.03
+# Uniformly enlarges the print area around its center. 1.0 = exactly the
+# corners you picked; 1.15 = design renders 15% larger than the picked area.
+DESIGN_SCALE = 1.21
+
+
+def find_content_bbox(design_rgba: np.ndarray, alpha_thresh: int = 10) -> tuple | None:
+    """
+    Bounding box (x0, y0, x1, y1) of the visible artwork inside the design.
+
+    Transparent PNGs → pixels with alpha above `alpha_thresh`.
+    Fully opaque images → pixels that differ from the border background color.
+    Returns None if no content is detected.
+    """
+    alpha = design_rgba[:, :, 3]
+    if (alpha < 250).any():
+        mask = alpha > alpha_thresh
+    else:
+        rgb    = design_rgba[:, :, :3].astype(np.int16)
+        border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
+        bg     = np.median(border, axis=0)
+        mask   = np.abs(rgb - bg).sum(axis=2) > 40
+
+    if not mask.any():
+        return None
+    ys, xs = np.where(mask)
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def measure_print_fill(
+    dw: int, dh: int,
+    bbox: tuple,
+    target_w: float, target_h: float,
+) -> float:
+    """
+    How much of the print area the visible artwork will cover (0.0–1.0)
+    after the design canvas is contain-fitted into the print area.
+    Measured on the binding dimension (the larger of width/height fill).
+    """
+    x0, y0, x1, y1 = bbox
+    bw, bh = x1 - x0, y1 - y0
+    s      = min(target_w / dw, target_h / dh)
+    return max((bw * s) / target_w, (bh * s) / target_h)
+
+
+def autofit_design(
+    design_rgba: np.ndarray,
+    target_w: float,
+    target_h: float,
+    min_fill: float = MIN_PRINT_FILL,
+) -> np.ndarray:
+    """
+    Detects whether the artwork already renders at a decent size in the print
+    area. If its coverage is below `min_fill`, crops away the empty border
+    (keeping a small margin) so it renders as large as possible.
+    """
+    dh, dw = design_rgba.shape[:2]
+    bbox   = find_content_bbox(design_rgba)
+    if bbox is None:
+        print("  ⚠️  No visible content detected — skipping size check")
+        return design_rgba
+
+    fill = measure_print_fill(dw, dh, bbox, target_w, target_h)
+    if fill >= min_fill:
+        print(f"  ✅ Design size OK — artwork covers {fill * 100:.0f}% of the print area")
+        return design_rgba
+
+    x0, y0, x1, y1 = bbox
+    bw, bh = x1 - x0, y1 - y0
+    mx, my = int(round(bw * CROP_MARGIN)), int(round(bh * CROP_MARGIN))
+    x0, y0 = max(0, x0 - mx), max(0, y0 - my)
+    x1, y1 = min(dw, x1 + mx), min(dh, y1 + my)
+    cropped = design_rgba[y0:y1, x0:x1]
+
+    ch, cw   = cropped.shape[:2]
+    new_fill = measure_print_fill(cw, ch, (0, 0, cw, ch), target_w, target_h)
+    print(f"  🔎 Small design detected — artwork covered only {fill * 100:.0f}% "
+          f"of the print area")
+    print(f"  📏 Auto-enlarged: cropped empty border "
+          f"{dw}x{dh} → {cw}x{ch}  (now covers {new_fill * 100:.0f}%)")
+    return cropped
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Core: warp + blend a design onto a shirt
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -203,8 +296,15 @@ def warp_design_onto_shirt(
     design_rgba = np.array(design_pil.convert("RGBA"), dtype=np.uint8)
     dh, dw      = design_rgba.shape[:2]
 
-    # Preserve design aspect ratio by padding with transparency
+    # Scale the print-area quad around its center (DESIGN_SCALE > 1 renders
+    # the design larger than the picked corners)
     corners_np = np.array(corners, dtype=np.float32)
+    if DESIGN_SCALE != 1.0:
+        center     = corners_np.mean(axis=0)
+        corners_np = center + (corners_np - center) * DESIGN_SCALE
+        print(f"  🔍 Print area scaled ×{DESIGN_SCALE:.2f} around center")
+
+    # Preserve design aspect ratio by padding with transparency
     top_w      = np.linalg.norm(corners_np[1] - corners_np[0])
     bottom_w   = np.linalg.norm(corners_np[2] - corners_np[3])
     left_h     = np.linalg.norm(corners_np[3] - corners_np[0])
@@ -212,7 +312,12 @@ def warp_design_onto_shirt(
     target_w   = (top_w + bottom_w) / 2.0
     target_h   = (left_h + right_h) / 2.0
     target_ar  = target_w / target_h
-    design_ar  = dw / dh
+
+    # Smart sizing: if the artwork would render small (lots of empty border),
+    # crop the border away so it fills the print area properly.
+    design_rgba = autofit_design(design_rgba, target_w, target_h)
+    dh, dw      = design_rgba.shape[:2]
+    design_ar   = dw / dh
 
     if abs(design_ar - target_ar) > 0.01:
         if design_ar < target_ar:
@@ -232,7 +337,7 @@ def warp_design_onto_shirt(
         dh, dw = design_rgba.shape[:2]
 
     src_pts = np.float32([[0, 0], [dw, 0], [dw, dh], [0, dh]])
-    dst_pts = np.float32(corners)
+    dst_pts = corners_np.astype(np.float32)
     M = cv2.getPerspectiveTransform(src_pts, dst_pts)
 
     warped_rgba = cv2.warpPerspective(
