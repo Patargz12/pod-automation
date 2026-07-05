@@ -7,9 +7,13 @@ This is Step 3 of the pipeline (after upscale + mockup). For every design in
   1. Uploads the image to Printify        (POST /uploads/images.json)
   2. Discovers the blueprint + provider    (GET  /catalog/...)
   3. Creates the product                    (POST /shops/{id}/products.json)
-  4. Publishes it                           (POST .../publish.json)
+  4. Publishes it — ONLY with publish=True  (POST .../publish.json)
 
 so it appears under "My Products" in your Printify dashboard.
+
+By default (publish=False) the product is created but NOT published, so it waits
+in Printify for you to finalize and click "Publish" yourself — only then does it
+sync to Etsy's Drafts tab. Pass publish=True (execute.py --publish) to auto-publish.
 
 ------------------------------------------------------------------------------
 WHAT THE PRINTIFY PUBLIC API *CANNOT* DO (printed as a manual checklist):
@@ -437,11 +441,15 @@ def _print_price_preview(catalog: dict):
         print(f"      → Fix the names in printify_service.py CONFIG and delete printify_cache.json.")
 
 
-def print_manual_checklist(results: list[dict]):
+def print_manual_checklist(results: list[dict], publish: bool = False):
     print("\n" + "═" * 56)
     print("  📋 MANUAL STEPS — not possible via the Printify API")
     print("═" * 56)
-    print("  Do these in the Printify/Etsy dashboard for each product:")
+    if publish:
+        print("  Do these in the Printify/Etsy dashboard for each product:")
+    else:
+        print("  Finalize each product in Printify, THEN click \"Publish\" to send it")
+        print("  to Etsy's Drafts tab:")
     print("    1. Set the mockup to 'Hanging 1' (FRONT side only, no back).")
     print("    2. Toggle ON 'Free shipping'.")
     print("    3. Toggle ON 'Etsy off-site ads'.")
@@ -449,6 +457,8 @@ def print_manual_checklist(results: list[dict]):
     print("       supports USD/EUR/GBP/CAD/AUD only).")
     print("    5. Review the title, description & tags (Gemini-generated if any")
     print("       GEMINI_API_KEY_1..5 is set; otherwise placeholder).")
+    if not publish:
+        print("    6. Center/adjust the design, then click 'Publish' in Printify.")
     if results:
         print("\n  Products created this run:")
         for r in results:
@@ -596,8 +606,14 @@ def forget_designs(names: list[str]) -> int:
 #  Orchestration — called from execute.py
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_printify_upload(designs: list[Path], dry_run: bool = False) -> int:
-    """Upload + create + publish each design on Printify. Returns # of products created.
+def run_printify_upload(designs: list[Path], dry_run: bool = False,
+                        publish: bool = False) -> int:
+    """Upload + create each design on Printify. Returns # of products created.
+
+    By default the product is created but NOT published to Etsy — it sits in your
+    Printify "My Products" so you can finalize it (centering, mockups, etc.) and
+    click "Publish" yourself. Pass publish=True to also push it to Etsy's Drafts
+    tab automatically.
 
     Skips designs already recorded in published.json (dedup across runs).
     With dry_run=True: does discovery + prints the payload/preview, creates nothing.
@@ -605,6 +621,10 @@ def run_printify_upload(designs: list[Path], dry_run: bool = False) -> int:
     print("\n" + "═" * 56)
     print("  🚀 Step 3: Printify upload" + ("  (DRY RUN — nothing will be created)" if dry_run else ""))
     print("═" * 56)
+    if not dry_run and not publish:
+        print("  ℹ️  Create-only mode: products stay in Printify (NOT published to Etsy).")
+        print("      Finalize each in Printify, then click \"Publish\" yourself.")
+        print("      (Pass --publish to auto-publish to Etsy's Drafts tab.)")
 
     token = os.environ.get("PRINTIFY_API_TOKEN", "").strip()
     if not token:
@@ -699,17 +719,22 @@ def run_printify_upload(designs: list[Path], dry_run: bool = False) -> int:
             product_id = product["id"]
             print(f"        ✓ product id {product_id}")
 
-            # 3. Publish
-            print(f"     📢 Publishing…")
-            client.publish_product(shop_id, product_id)
-            print(f"        ✓ publish accepted (Etsy sync is async — may take a moment)")
+            # 3. Publish (only when explicitly requested — otherwise the product
+            #    waits in Printify for you to finalize and publish manually).
+            if publish:
+                print(f"     📢 Publishing…")
+                client.publish_product(shop_id, product_id)
+                print(f"        ✓ publish accepted (Etsy sync is async — may take a moment)")
+            else:
+                print(f"     ⏸️  Created, NOT published — finalize in Printify, then publish there.")
 
             # 4. Record (saved immediately so a later failure never loses this one)
             ledger["products"].append({
                 "design": name,
                 "product_id": product_id,
                 "shop_id": shop_id,
-                "published_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "published": publish,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             })
             _save_json(LEDGER_FILE, ledger)
             results.append({"design": name, "product_id": product_id})
@@ -724,11 +749,15 @@ def run_printify_upload(designs: list[Path], dry_run: bool = False) -> int:
     if dry_run:
         print("\n  ✅ Dry run complete — no products created.")
     else:
-        print(f"\n  🎉 Printify: {created} product(s) created & published.")
+        if publish:
+            print(f"\n  🎉 Printify: {created} product(s) created & published to Etsy.")
+        else:
+            print(f"\n  🎉 Printify: {created} product(s) created (NOT published — "
+                  f"publish them in Printify when ready).")
         if failures:
             print(f"  ⚠️  {len(failures)} design(s) failed (not in ledger — re-run to retry):")
             for f in failures:
                 print(f"       • {f['design']}: {f['error']}")
-        print_manual_checklist(results)
+        print_manual_checklist(results, publish=publish)
 
     return created

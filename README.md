@@ -2,6 +2,14 @@
 
 A modular pipeline that turns raw design PNGs into polished t-shirt mockup thumbnails for print-on-demand listings. Drop your designs in, get upscaled mockups out.
 
+
+## How to start the app? 
+
+Just run 
+
+python -m pip install -r requirements.txt
+
+
 ## What it does
 
 1. **Upscales** every raw design 4x using Real-ESRGAN (the same engine Upscayl uses)

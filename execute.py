@@ -1,14 +1,38 @@
 """
 execute.py — T-Shirt Design Replacer (Batch Mode + Auto-Upscale)
 ==================================================================
+MOST USED COMMANDS (typical flow, in order):
+
+  Step 1 — Start clean: wipe the ledger so ALL designs re-create next run.
+    python execute.py --clear-ledger
+
+  Step 2 — Preview the mockups only (no Printify upload). Check the designs
+           in 'output/' look right before touching Printify.
+    python execute.py --no-publish
+
+  Step 3 — Run the full pipeline: upload + create the products in Printify.
+           (They are NOT published to Etsy — finalize each in Printify and
+            click "Publish" yourself when ready.)
+    python execute.py
+
+  Bonus — Check how many T-shirts you can still create with your remaining
+          Google Gemini AI tokens (lists each key + a daily t-shirt estimate).
+    python check_gemini.py
+
+==================================================================
 USAGE:
-  python execute.py              # Upscale → mockups → Printify upload (full pipeline)
+  python execute.py              # Upscale → mockups → Printify upload (full pipeline).
+                                 #   Products are CREATED in Printify but NOT published
+                                 #   to Etsy — you finalize them in Printify and click
+                                 #   "Publish" yourself when ready.
+  python execute.py --publish    # Also auto-publish to Etsy (old behavior: product
+                                 #   lands in Etsy's "Drafts" tab without manual review)
   python execute.py --reset      # Clear saved corners and re-pick for all
   python execute.py --setup      # Only run corner setup (no processing)
   python execute.py --upscale-only   # Run upscaling step only (no mockups)
   python execute.py --skip-upscale   # Skip upscaling; use Final Designs/ as-is
   python execute.py --reupscale  # Force re-upscale (overwrite Final Designs/)
-  python execute.py --no-publish # Skip the Printify upload step (mockups only)
+  python execute.py --no-publish # Skip the Printify upload step entirely (mockups only)
   python execute.py --dry-run    # Printify step: preview only, create nothing
   python execute.py --update-listings  # Regenerate AI title/description/tags for
                                  #   every already-published product and republish
@@ -35,7 +59,9 @@ PIPELINE:
   1. Upscale every new design in designs/ → 4x → Final Designs/
      (uses 'realesr-general-x4v3' model — same as Upscayl Lite)
   2. For every thumbnail × every design in Final Designs/, render a mockup.
-  3. Upload each Final Designs/ image to Printify, create & publish the product.
+  3. Upload each Final Designs/ image to Printify and create the product.
+     By default it is NOT published to Etsy — finalize it in Printify and click
+     "Publish" yourself. Pass --publish to auto-publish to Etsy's Drafts tab.
      (skips designs already in published.json; needs PRINTIFY_API_TOKEN)
 
 UPSCALER SETUP (one-time):
@@ -126,6 +152,7 @@ def run(
     force_reupscale: bool = False,
     upscale_only: bool = False,
     no_publish: bool = False,
+    publish: bool = False,
     dry_run: bool = False,
 ):
     ensure_dirs()
@@ -245,7 +272,7 @@ def run(
         print(f"  ⏭️   Printify step skipped (--no-publish)\n")
         return
 
-    run_printify_upload(designs, dry_run=dry_run)
+    run_printify_upload(designs, dry_run=dry_run, publish=publish)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -297,6 +324,7 @@ if __name__ == "__main__":
     force_reupscale = "--reupscale" in args
     upscale_only    = "--upscale-only" in args
     no_publish      = "--no-publish" in args
+    publish         = "--publish" in args
     dry_run         = "--dry-run" in args
     run(
         setup_only=setup_only,
@@ -304,6 +332,7 @@ if __name__ == "__main__":
         force_reupscale=force_reupscale,
         upscale_only=upscale_only,
         no_publish=no_publish,
+        publish=publish,
         dry_run=dry_run,
     )
 

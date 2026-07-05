@@ -71,6 +71,13 @@ TAGS rules:
 - Lowercase multi-word phrases buyers actually search (e.g. "coding humor shirt").
 - No duplicates, no '#' symbols, no single generic words like "shirt" alone.
 - Reflect the actual theme, text and audience of THIS design.
+- ONLY IF the design is genuinely about AI / machine learning / tech (e.g. it
+  references AI, LLMs, prompts, robots, data, coding, neural nets), lean into
+  strong AI/tech long-tail phrases buyers search, such as "ai humor shirt",
+  "machine learning", "prompt engineer", "data scientist", "ai engineer gift",
+  "nerdy tech shirt". Each must still be ≤20 chars and pair the AI/tech signal
+  with a product or audience word — never a bare "artificial" or "intelligence".
+  If the design is NOT AI/tech related, do NOT force AI tags in.
 """
 
 
