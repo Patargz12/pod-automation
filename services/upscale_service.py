@@ -2,13 +2,17 @@
 services/upscale_service.py — Real-ESRGAN upscaling service
 ============================================================
 Handles detection of the Real-ESRGAN binary and model, and runs
-4x upscaling on every raw design in designs/ → Final Designs/.
+4x upscaling on every raw design in assets/designs/ → assets/designs_final/.
 """
 
 import sys
 import shutil
 import subprocess
 from pathlib import Path
+
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None   # designs are huge on purpose; only the size is read
 
 # ─── Real-ESRGAN Configuration ─────────────────────────────────────────────────
 MODEL_PREFERENCE = [
@@ -17,6 +21,10 @@ MODEL_PREFERENCE = [
     "realesrgan-x4plus",
 ]
 SCALE = 4
+# Real-ESRGAN fails when the 4x output gets too big (an 8192px design never came
+# out). 6144px is the largest that has upscaled fine, so anything bigger is
+# already print-ready and is copied to designs_final/ as is.
+MAX_UPSCALE_SIDE = 6144
 BIN_NAME = "realesrgan-ncnn-vulkan.exe" if sys.platform == "win32" \
                                         else "realesrgan-ncnn-vulkan"
 
@@ -73,7 +81,7 @@ def upscale(
 
     Args:
         designs_dir: Directory containing raw (not-yet-upscaled) design files.
-        output_dir:  Destination directory for 4x upscaled output (Final Designs/).
+        output_dir:  Destination directory for 4x upscaled output (assets/designs_final/).
         img_exts:    Tuple of glob patterns, e.g. ("*.png", "*.jpg").
         force:       When True, re-upscales files even if the output already exists.
 
@@ -96,6 +104,10 @@ def upscale(
         dst = output_dir / f"{src.stem}.png"
         if dst.exists() and not force:
             print(f"  ✓ Already upscaled — skipping {src.name}")
+        elif max(_size(src)) > MAX_UPSCALE_SIDE:
+            _copy_as_png(src, dst)
+            w, h = _size(src)
+            print(f"  ✓ Already high-res ({w}×{h}) — copied as is: {src.name}")
         else:
             todo.append((src, dst))
 
@@ -163,6 +175,20 @@ def upscale(
 
     print(f"\n  🎉 Upscaling done — {upscaled} new file(s) in '{output_dir}/'")
     return upscaled
+
+
+def _size(path: Path) -> tuple[int, int]:
+    with Image.open(path) as im:
+        return im.size
+
+
+def _copy_as_png(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src.suffix.lower() == ".png":
+        shutil.copy2(src, dst)
+    else:
+        with Image.open(src) as im:
+            im.save(dst, "PNG")
 
 
 def _gather_files(directory: Path, img_exts: tuple[str, ...]) -> list[Path]:

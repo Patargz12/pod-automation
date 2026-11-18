@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(POD_ALLOW_IPV6=1 time python marketing_sweatshirt.py --dry-run)",
+      "Bash(export POD_ALLOW_IPV6=1)",
+      "Bash(time python marketing_sweatshirt.py --dry-run)",
+      "Bash(python -m py_compile services/etsy_service.py etsy_auth.py marketing_sweatshirt.py)",
+      "Bash(python -X utf8 -c ' *)",
+      "ClaudeInChromeDomain(ph.pinterest.com)"
+    ]
+  }
+}

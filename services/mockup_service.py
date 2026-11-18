@@ -416,15 +416,19 @@ def generate_mockups(
     designs: list[Path],
     corners_map: dict[str, list],
     output_dir: Path,
+    group_by_design: bool = False,
 ) -> tuple[int, int]:
     """
     Render every thumbnail × design combination and save to `output_dir`.
 
     Args:
         thumbnails:  List of shirt template image paths.
-        designs:     List of upscaled design image paths (from Final Designs/).
+        designs:     List of upscaled design image paths (from assets/designs_final/).
         corners_map: Mapping of thumbnail filename → [[x,y], …] corner list.
         output_dir:  Destination directory for rendered mockups.
+        group_by_design: When True, save each render into a per-design
+                     subfolder as `output_dir/{design_stem}/{thumb_stem}.png`
+                     instead of a flat file in `output_dir`.
 
     Returns:
         (processed_count, skipped_count)
@@ -474,8 +478,13 @@ def generate_mockups(
                     result_rgba   = np.dstack([result_rgb, original_rgba[:, :, 3]])
                     result        = Image.fromarray(result_rgba, "RGBA")
 
-                out_name = build_output_name(thumb_path, design_path, multi_thumb)
-                out_path = output_dir / out_name
+                if group_by_design:
+                    design_dir = output_dir / design_path.stem
+                    design_dir.mkdir(parents=True, exist_ok=True)
+                    out_path = design_dir / f"{thumb_path.stem}.png"
+                else:
+                    out_name = build_output_name(thumb_path, design_path, multi_thumb)
+                    out_path = output_dir / out_name
                 result.save(out_path, "PNG")
                 print(f"  ✅ Saved → {out_path}")
                 processed += 1

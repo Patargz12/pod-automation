@@ -1,0 +1,5 @@
+# Everything the GitHub Actions poster needs — deliberately tiny.
+# (prepare.py runs locally and uses the main requirements.txt.)
+requests
+pillow
+python-dotenv

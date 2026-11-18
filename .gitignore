@@ -1,10 +1,13 @@
 # Secrets & local state
 .env
-published.json
-printify_cache.json
+
+# All generated local state: Printify catalog caches, published/marketed
+# ledgers, Etsy OAuth tokens. Auto-created; safe to delete.
+caching/
 
 # Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+output/

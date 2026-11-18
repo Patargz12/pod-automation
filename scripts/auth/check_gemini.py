@@ -2,7 +2,7 @@
 check_gemini.py — Gemini API key health + t-shirt capacity estimator
 =====================================================================
 USAGE:
-  python check_gemini.py
+  python -m scripts.auth.check_gemini
 
 WHAT IT DOES:
   • Reads GEMINI_API_KEY_1 … GEMINI_API_KEY_5 from your .env / environment.
@@ -47,7 +47,7 @@ import os
 from services.ai_content import KEY_ENV_NAMES, MODEL
 
 # ── Capacity assumptions (EDIT IF YOUR PLAN DIFFERS) ──────────────────────────
-# Free-tier requests/day per key for gemini-2.5-flash. Google changes these
+# Free-tier requests/day per key for gemini-3.6-flash. Google changes these
 # periodically — adjust to match https://ai.google.dev/gemini-api/docs/rate-limits
 FREE_TIER_REQUESTS_PER_DAY_PER_KEY = 250
 
@@ -76,11 +76,11 @@ def _check_key(key: str):
         return False, "google-genai not installed (pip install -r requirements.txt)"
     try:
         client = genai.Client(api_key=key)
-        # count_tokens validates the key/auth without consuming generation RPD.
+     
         client.models.count_tokens(model=MODEL, contents="ping")
         return True, "valid"
-    except Exception as e:  # noqa: BLE001 — we want to report any failure
-        # A rate-limit here still means the key is real & working, just busy.
+    except Exception as e: 
+
         status = _classify_error(e)
         return ("rate-limited" in status), status
 

@@ -4,42 +4,42 @@ execute.py — T-Shirt Design Replacer (Batch Mode + Auto-Upscale)
 MOST USED COMMANDS (typical flow, in order):
 
   Step 1 — Start clean: wipe the ledger so ALL designs re-create next run.
-    python execute.py --clear-ledger
+    python -m scripts.create.execute --clear-ledger
 
   Step 2 — Preview the mockups only (no Printify upload). Check the designs
-           in 'output/' look right before touching Printify.
-    python execute.py --no-publish
+           in 'output/legacy_tshirt/' look right before touching Printify.
+    python -m scripts.create.execute --no-publish
 
   Step 3 — Run the full pipeline: upload + create the products in Printify.
            (They are NOT published to Etsy — finalize each in Printify and
             click "Publish" yourself when ready.)
-    python execute.py
+    python -m scripts.create.execute
 
   Bonus — Check how many T-shirts you can still create with your remaining
           Google Gemini AI tokens (lists each key + a daily t-shirt estimate).
-    python check_gemini.py
+    python -m scripts.auth.check_gemini
 
 ==================================================================
 USAGE:
-  python execute.py              # Upscale → mockups → Printify upload (full pipeline).
+  python -m scripts.create.execute              # Upscale → mockups → Printify upload (full pipeline).
                                  #   Products are CREATED in Printify but NOT published
                                  #   to Etsy — you finalize them in Printify and click
                                  #   "Publish" yourself when ready.
-  python execute.py --publish    # Also auto-publish to Etsy (old behavior: product
+  python -m scripts.create.execute --publish    # Also auto-publish to Etsy (old behavior: product
                                  #   lands in Etsy's "Drafts" tab without manual review)
-  python execute.py --reset      # Clear saved corners and re-pick for all
-  python execute.py --setup      # Only run corner setup (no processing)
-  python execute.py --upscale-only   # Run upscaling step only (no mockups)
-  python execute.py --skip-upscale   # Skip upscaling; use Final Designs/ as-is
-  python execute.py --reupscale  # Force re-upscale (overwrite Final Designs/)
-  python execute.py --no-publish # Skip the Printify upload step entirely (mockups only)
-  python execute.py --dry-run    # Printify step: preview only, create nothing
-  python execute.py --update-listings  # Regenerate AI title/description/tags for
+  python -m scripts.create.execute --reset      # Clear saved corners and re-pick for all
+  python -m scripts.create.execute --setup      # Only run corner setup (no processing)
+  python -m scripts.create.execute --upscale-only   # Run upscaling step only (no mockups)
+  python -m scripts.create.execute --skip-upscale   # Skip upscaling; use assets/designs_final/ as-is
+  python -m scripts.create.execute --reupscale  # Force re-upscale (overwrite assets/designs_final/)
+  python -m scripts.create.execute --no-publish # Skip the Printify upload step entirely (mockups only)
+  python -m scripts.create.execute --dry-run    # Printify step: preview only, create nothing
+  python -m scripts.create.execute --update-listings  # Regenerate AI title/description/tags for
                                  #   every already-published product and republish
-  python execute.py --reconcile  # Forget ledger entries deleted on Printify (re-create them)
-  python execute.py --clear-ledger # Wipe the whole ledger (re-create ALL designs next run)
-  python execute.py --forget "name.png" [more...]  # Forget specific design(s) by file name
-  python execute.py --help       # Show this help
+  python -m scripts.create.execute --reconcile  # Forget ledger entries deleted on Printify (re-create them)
+  python -m scripts.create.execute --clear-ledger # Wipe the whole ledger (re-create ALL designs next run)
+  python -m scripts.create.execute --forget "name.png" [more...]  # Forget specific design(s) by file name
+  python -m scripts.create.execute --help       # Show this help
 
 PRINTIFY SETUP (one-time, for Step 3):
   1. pip install -r requirements.txt
@@ -48,21 +48,24 @@ PRINTIFY SETUP (one-time, for Step 3):
   If no token is set, Step 3 is skipped automatically (mockups still run).
 
 FOLDER STRUCTURE:
-  thumbnails/      → Put your t-shirt thumbnail images here (.png/.jpg)
-  designs/         → Drop RAW (not-yet-upscaled) designs here
-  Final Designs/   → Auto-populated with 4x upscaled designs (mockup source)
-  output/          → Processed mockups are saved here (auto-created)
+  assets/thumbnails/      → Put your t-shirt thumbnail images here (.png/.jpg)
+  assets/designs/         → Drop RAW (not-yet-upscaled) designs here
+  assets/designs_final/   → Auto-populated with 4x upscaled designs (mockup source)
+  output/legacy_tshirt/          → Processed mockups are saved here (auto-created)
   bin/realesrgan/  → Place the Real-ESRGAN-ncnn-vulkan binary + models here
+  caching/         → Auto-created; all generated local state (Printify catalog
+                     caches, published/marketed ledgers, Etsy tokens). Gitignored
+                     and safe to delete — it only forces a re-fetch/re-run.
   config.json      → Auto-generated; stores corner coordinates per thumbnail
 
 PIPELINE:
-  1. Upscale every new design in designs/ → 4x → Final Designs/
+  1. Upscale every new design in assets/designs/ → 4x → assets/designs_final/
      (uses 'realesr-general-x4v3' model — same as Upscayl Lite)
-  2. For every thumbnail × every design in Final Designs/, render a mockup.
-  3. Upload each Final Designs/ image to Printify and create the product.
+  2. For every thumbnail × every design in assets/designs_final/, render a mockup.
+  3. Upload each assets/designs_final/ image to Printify and create the product.
      By default it is NOT published to Etsy — finalize it in Printify and click
      "Publish" yourself. Pass --publish to auto-publish to Etsy's Drafts tab.
-     (skips designs already in published.json; needs PRINTIFY_API_TOKEN)
+     (skips designs already in caching/published.json; needs PRINTIFY_API_TOKEN)
 
 UPSCALER SETUP (one-time):
   Download Real-ESRGAN-ncnn-vulkan release for your OS:
@@ -102,10 +105,10 @@ from services.printify_service import (
 )
 
 # ─── Folder Configuration ──────────────────────────────────────────────────────
-THUMBNAILS_DIR    = Path("thumbnails")
-DESIGNS_DIR       = Path("designs")           # raw, not-yet-upscaled designs
-FINAL_DESIGNS_DIR = Path("Final Designs")     # 4x upscaled designs (mockup source)
-OUTPUT_DIR        = Path("output")
+THUMBNAILS_DIR    = Path("assets/thumbnails")
+DESIGNS_DIR       = Path("assets/designs")           # raw, not-yet-upscaled designs
+FINAL_DESIGNS_DIR = Path("assets/designs_final")     # 4x upscaled designs (mockup source)
+OUTPUT_DIR        = Path("output/legacy_tshirt")
 CONFIG_FILE       = Path("config.json")
 
 # ─── Supported Formats ─────────────────────────────────────────────────────────
@@ -159,24 +162,26 @@ def run(
 
     raw_before      = gather_files(DESIGNS_DIR)
     upscaled_before = gather_files(FINAL_DESIGNS_DIR)
-    thumbnails      = gather_files(THUMBNAILS_DIR)
+    # Sweatshirt-named thumbnails belong to the sweatshirt pipeline (sweatshirt.py)
+    thumbnails      = [t for t in gather_files(THUMBNAILS_DIR)
+                       if "sweatshirt" not in t.name.lower()]
     binary          = find_binary()
 
     print("\n" + "═" * 56)
     print("  🎽  T-Shirt Mockup Pipeline")
     print("═" * 56)
     print(f"\n  📊 Pre-flight scan:")
-    print(f"     thumbnails/      → {len(thumbnails)} file(s)")
-    print(f"     designs/         → {len(raw_before)} file(s)  (raw input)")
-    print(f"     Final Designs/   → {len(upscaled_before)} file(s)  (upscaled, mockup source)")
+    print(f"     assets/thumbnails/      → {len(thumbnails)} file(s)")
+    print(f"     assets/designs/         → {len(raw_before)} file(s)  (raw input)")
+    print(f"     assets/designs_final/   → {len(upscaled_before)} file(s)  (upscaled, mockup source)")
     print(f"     Real-ESRGAN bin  → {binary if binary else '❌ NOT FOUND'}")
 
     if not raw_before and not upscaled_before:
-        print(f"\n❌  Both 'designs/' and 'Final Designs/' are empty.")
+        print(f"\n❌  Both 'assets/designs/' and 'assets/designs_final/' are empty.")
         print(f"\n    Workflow:")
-        print(f"      1. Drop your raw designs (.png/.jpg/.jpeg/.webp) into 'designs/'")
+        print(f"      1. Drop your raw designs (.png/.jpg/.jpeg/.webp) into 'assets/designs/'")
         print(f"      2. Run this script again")
-        print(f"      3. They'll be auto-upscaled 4x → 'Final Designs/' → mockups → 'output/'\n")
+        print(f"      3. They'll be auto-upscaled 4x → 'assets/designs_final/' → mockups → 'output/legacy_tshirt/'\n")
         sys.exit(1)
 
     if not thumbnails:
@@ -204,9 +209,9 @@ def run(
     designs = gather_files(FINAL_DESIGNS_DIR)
 
     if not designs:
-        print(f"\n❌  'Final Designs/' is empty — cannot generate mockups.\n")
+        print(f"\n❌  'assets/designs_final/' is empty — cannot generate mockups.\n")
         if raw_before and not skip_upscale:
-            print(f"    You have {len(raw_before)} file(s) in 'designs/' but the upscale")
+            print(f"    You have {len(raw_before)} file(s) in 'assets/designs/' but the upscale")
             print(f"    step produced no output. Most likely causes:\n")
             if binary is None:
                 print(f"      • ⚠️  Real-ESRGAN binary is NOT installed.")
@@ -216,8 +221,8 @@ def run(
                 print(f"      • Real-ESRGAN ran but errored (scroll up for the ❌ line)")
                 print(f"      • The 'models/' folder may be missing next to the binary\n")
         elif skip_upscale:
-            print(f"    You used --skip-upscale, but 'Final Designs/' has no files.")
-            print(f"    Remove --skip-upscale to let the pipeline upscale 'designs/'.\n")
+            print(f"    You used --skip-upscale, but 'assets/designs_final/' has no files.")
+            print(f"    Remove --skip-upscale to let the pipeline upscale 'assets/designs/'.\n")
         sys.exit(1)
 
     # ── Ensure every thumbnail has saved corners ──────────────────────────────
@@ -274,6 +279,18 @@ def run(
 
     run_printify_upload(designs, dry_run=dry_run, publish=publish)
 
+    # ── Step 4: the auto-renew reminder ───────────────────────────────────────
+    # This pipeline never calls the Etsy API — Printify creates the draft and
+    # YOU click Publish, so there is no point in this code where a listing can
+    # be flipped to "Automatic" renewal. Printify-created listings start on
+    # "Manual", which means they expire after four months and take their views
+    # and search history with them. Seven live tees were lost to exactly this
+    # gap. renew.py is the sweep; this is the reminder to run it.
+    if not dry_run:
+        print(f"  ♻️   AFTER you publish on Etsy, run:  python -m scripts.etsy.renew --apply")
+        print(f"       Etsy listings start on Manual renewal and silently expire")
+        print(f"       after four months. Costs nothing now.\n")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Entry point
@@ -294,7 +311,7 @@ if __name__ == "__main__":
         if len(args) == 1:
             sys.exit(0)
 
-    # ── Ledger maintenance (published.json) ───────────────────────────────────
+    # ── Ledger maintenance (caching/published.json) ───────────────────────────
     if "--update-listings" in args:
         # Refresh title/description/tags (Gemini) on already-published products.
         update_listings(FINAL_DESIGNS_DIR)
@@ -310,11 +327,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if "--forget" in args:
-        # Usage: python execute.py --forget "break.png" "retrying_my_prompt.png"
+        # Usage: python -m scripts.create.execute --forget "break.png" "retrying_my_prompt.png"
         names = [a for a in args[args.index("--forget") + 1:] if not a.startswith("--")]
         if not names:
             print("⚠️  --forget needs at least one design file name, e.g.:")
-            print('    python execute.py --forget "break.png"')
+            print('    python -m scripts.create.execute --forget "break.png"')
         else:
             forget_designs(names)
         sys.exit(0)

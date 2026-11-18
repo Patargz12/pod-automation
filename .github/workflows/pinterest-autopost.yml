@@ -1,0 +1,85 @@
+# Pinterest autopilot — posts the next pin from Pinterest_Market/queue.json.
+#
+# OFF until you set the repository variable PINTEREST_AUTOPOST = on
+#   (GitHub → repo → Settings → Secrets and variables → Actions → Variables).
+# Setup checklist: Pinterest_Market/README.md
+
+name: Pinterest autopost
+
+on:
+  schedule:
+    # 3 pins/day, 1 per run. Cron times are UTC.
+    # Off-the-hour minutes because GitHub delays runs queued exactly on :00.
+    - cron: "17 1 * * *"    # 9:17 AM Philippines · 8:17 PM US Eastern (prev. day)
+    - cron: "17 13 * * *"   # 9:17 PM Philippines · 8:17 AM US Eastern
+    - cron: "17 18 * * *"   # 2:17 AM Philippines · 1:17 PM US Eastern
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "How many pins to post now"
+        default: "1"
+
+permissions:
+  contents: write          # to commit queue.json back
+
+concurrency:
+  group: pinterest-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    if: vars.PINTEREST_AUTOPOST == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PINTEREST_ENV: production
+      PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+      PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: Pinterest_Market/requirements-post.txt
+
+      - name: Install (tiny)
+        run: pip install -r Pinterest_Market/requirements-post.txt
+
+      - name: Restore Pinterest tokens
+        env:
+          TOKENS: ${{ secrets.PINTEREST_TOKENS_JSON }}
+        run: |
+          if [ -z "$TOKENS" ]; then echo "::error::Secret PINTEREST_TOKENS_JSON is not set"; exit 1; fi
+          mkdir -p caching
+          printf '%s' "$TOKENS" > caching/.pinterest_tokens.json
+          sha256sum caching/.pinterest_tokens.json | cut -d' ' -f1 > /tmp/tokens.before
+
+      - name: Post next pin
+        run: python -m scripts.pinterest_marketing post --count "${{ github.event.inputs.count || '1' }}"
+
+      # Pinterest refreshes the access token every ~27 days. When that happens the
+      # new token must be saved back, or the next run would start from a stale one.
+      - name: Save refreshed tokens
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          [ -f caching/.pinterest_tokens.json ] || exit 0
+          after=$(sha256sum caching/.pinterest_tokens.json | cut -d' ' -f1)
+          if [ "$after" = "$(cat /tmp/tokens.before 2>/dev/null)" ]; then echo "Tokens unchanged."; exit 0; fi
+          if [ -z "$GH_TOKEN" ]; then echo "::error::Token was refreshed but secret GH_PAT is not set — it could not be saved."; exit 1; fi
+          gh secret set PINTEREST_TOKENS_JSON --repo "$GITHUB_REPOSITORY" < caching/.pinterest_tokens.json
+          echo "Refreshed tokens saved to PINTEREST_TOKENS_JSON."
+
+      - name: Commit queue progress
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Pinterest_Market/queue.json
+          git diff --cached --quiet && { echo "Queue unchanged."; exit 0; }
+          git commit -m "pinterest: autopost progress [skip ci]"
+          git pull --rebase --autostash
+          git push
