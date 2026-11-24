@@ -221,7 +221,9 @@
       "link": "https://www.etsy.com/listing/4532804475",
       "board_id": "1128433319074449223",
       "board_name": "AI Humor",
-      "status": "pending"
+      "status": "posted",
+      "pin_id": "1128433250425890176",
+      "posted_at": "2026-11-24 01:23:34 UTC"
     },
     {
       "id": "ctrl_alt__New_Mockup",
