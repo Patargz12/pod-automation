@@ -371,7 +371,9 @@
       "link": "https://www.etsy.com/listing/4529259987",
       "board_id": "1128433319074399324",
       "board_name": "Programming Vibes",
-      "status": "pending"
+      "status": "posted",
+      "pin_id": "1128433250426179233",
+      "posted_at": "2026-11-27 13:23:27 UTC"
     }
   ]
 }
